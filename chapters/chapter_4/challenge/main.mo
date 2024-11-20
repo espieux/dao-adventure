@@ -4,6 +4,10 @@ import HashMap "mo:base/HashMap";
 import Iter "mo:base/Iter";
 import Principal "mo:base/Principal";
 import Option "mo:base/Option";
+import Nat64 "mo:base/Nat64";
+import Hash "mo:base/Hash";
+import Time "mo:base/Time";
+import Bool "mo:base/Bool";
 import Types "types";
 actor {
     // For this level we need to make use of the code implemented in the previous projects.
@@ -161,19 +165,109 @@ actor {
     /////////////////
     // PROJECT #4 //
     ///////////////
+
+    var proposalId : ProposalId = 0;
+    let proposals = HashMap.HashMap<ProposalId, Proposal>(0, Nat64.equal, Nat64.toNat32);
+
     public shared ({ caller }) func createProposal(content : ProposalContent) : async Result<ProposalId, Text> {
-        return #err("Not implemented");
+        if(Option.isNull(members.get(caller))){
+            return #err("Caller does not exist");
+        };
+        switch (await burn(caller, 1)) {
+            case (#ok()) {
+                let result : ProposalId = proposalId;
+                var newProposal : Proposal = {
+                    id = result;
+                    content = content;
+                    creator = caller;
+                    created = Time.now(); // Use the current time
+                    executed = null; // Not executed yet
+                    votes = []; // No votes yet
+                    voteScore = 0; // Initial score
+                    status = #Open; // Initial stat
+                };
+                proposals.put(result, newProposal);
+                proposalId += 1;
+                return #ok(result);
+            };
+            case (#err(msg)) {
+                return #err(msg);
+            };
+        };
+
     };
 
     public query func getProposal(proposalId : ProposalId) : async ?Proposal {
-        return null;
+        return proposals.get(proposalId);
     };
 
     public shared ({ caller }) func voteProposal(proposalId : ProposalId, yesOrNo : Bool) : async Result<(), Text> {
-        return #err("Not implemented");
+        // Check if member exists
+        if(Option.isNull(members.get(caller))){
+            return #err("Caller does not exist");
+        };
+        switch(proposals.get(proposalId)){
+            // Check if proposal exists
+            case(null){
+                return #err("Invalid proposal ID");
+            };
+            case (? proposal){
+                // Check if member has already voted
+                if (_hasVoted(proposal, caller)){
+                    return #err("Already voted");
+                };
+                // Add vote to proposal
+                proposals.put(proposalId, _newProposal(proposal, caller, yesOrNo));
+                return #ok();
+            };
+        };
     };
 
     public query func getAllProposals() : async [Proposal] {
         return [];
+    };
+
+    func _hasVoted(proposal: Proposal, p : Principal) : Bool {
+        let iter = proposal.votes.vals();
+        for (vote in iter){
+            if(vote.member == p){
+                return true;
+            };
+        };
+        return false;
+    };
+
+    func _newProposal(proposal: Proposal, voter: Principal, yesOrNo : Bool) : Proposal {
+        let votingPower = Option.get(ledger.get(voter),0);
+        let multiplier = switch(yesOrNo){
+            case (true) {1};
+            case (false) {-1};
+        };
+        let newVotes = Buffer.fromArray<Vote>(proposal.votes);
+        newVotes.add({
+            member = voter;
+            votingPower;
+            yesOrNo;
+        });
+        let newVoteScore = proposal.voteScore + votingPower * multiplier;
+        var newVoteStatus = proposal.status;
+        if (newVoteScore < -100) {
+            let newVoteStatus = #Rejected;
+        }
+        else if (newVoteScore > 100){
+            let newVoteStatus = #Accepted;
+        };
+
+        let newProposal = {
+            id = proposal.id;
+            content = proposal.content;
+            creator = proposal.creator;
+            created = proposal.created;
+            executed = proposal.executed;
+            votes = Buffer.toArray(newVotes);
+            voteScore = newVoteScore;
+            status = newVoteStatus;
+        };
+        return newProposal;
     };
 };
