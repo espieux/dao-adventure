@@ -7,6 +7,12 @@ actor Webpage {
     type HttpRequest = Types.HttpRequest;
     type HttpResponse = Types.HttpResponse;
 
+    let MBToken = actor ("uk5da-6iaaa-aaaab-qadja-cai") : actor {
+        mint(owner : Principal, amount : Nat) : async Result<(), Text>;
+        balanceOf(owner : Principal) : async Nat;
+        burn(owner : Principal, amount : Nat) : async Result<(), Text>;
+    };
+
     // The manifesto stored in the webpage canister should always be the same as the one stored in the DAO canister
     stable var manifesto : Text = "Let's graduate!";
 
